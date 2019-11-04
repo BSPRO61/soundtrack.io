@@ -9,12 +9,31 @@ block content
     h2 Query used (for debug purposes)
     pre #{JSON.stringify(query)}
 
-    ul
-      for track in tracks
-        li
-          if (track._artist)
-            a(href="/#{track._artist.slug}") #{track._artist.name}
-            |  &mdash; 
-            a(href="/#{track._artist.slug}/#{track.slug}/#{track._id}") #{track.title}
-          else
-            h5 ಠ_ಠ #{track}
+    table.table.tablesorter
+      thead
+        tr
+          th Artist
+          th Title
+          th Length
+          th Plays
+          th Controls
+      tbody
+        for track in tracks
+          - var disallowPlaylists = true
+          - var banControls = true
+          include partials/track-row
+
+    h2 #{room.bans._tracks.length} Banned Tracks
+    p Banned tracks will not be selected by the machine when on random mode.  However, users can still queue these tracks.  See also <a href="#">User Bans</a>.
+    table.table.tablesorter
+      thead
+        tr
+          th Artist
+          th Title
+          th Length
+          th Plays
+          th Controls
+      tbody
+        for track in room.bans._tracks
+          - var disallowPlaylists = true
+          include partials/track-row

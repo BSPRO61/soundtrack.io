@@ -12,8 +12,8 @@ var mongoose = require('mongoose')
 var TrackSchema = new Schema({
     title: { type: String, required: true }
   , titles: [ { type: String } ]
-  , _artist: { type: ObjectId, ref: 'Artist' }
-  , _credits: [ { type: ObjectId, ref: 'Artist' } ]
+  , _artist: { type: ObjectId, ref: 'Artist', index: true }
+  , _credits: [ { type: ObjectId, ref: 'Artist', index: true } ]
   , duration: { type: Number } // time in seconds
   , flags: {
         nsfw: { type: Boolean, default: false }
@@ -26,18 +26,27 @@ var TrackSchema = new Schema({
   , updated: { type: Date, default: 0 }
   , _sources: [ { type: ObjectId, ref: 'Source' } ]
   , sources: {
+      direct: [ new Schema({
+        uri: { type: String , required: true , index: true },
+        duration: { type: Number },
+        data: {}
+      })],
       lastfm: [ new Schema({
-          id: { type: String , required: true }
+          id: { type: String , required: true , index: true }
         , duration: { type: Number }
         , data: {}
       }) ],
       youtube: [ new Schema({
-          id: { type: String, required: true }
+          id: { type: String, required: true , index: true }
         , start: { type: Number, default: 0 }
         , duration: { type: Number }
         , data: {}
       })],
       soundcloud: [ new Schema({
+          id: { type: String, required: true , index: true }
+        , data: {}
+      })],
+      bandcamp: [ new Schema({
           id: { type: String, required: true }
         , data: {}
       })],
@@ -74,9 +83,10 @@ TrackSchema.pre('save', function(next) {
     });
   }
 
-  ['youtube', 'soundcloud'].forEach(function(source) {
+  ['direct', 'youtube', 'soundcloud'].forEach(function(source) {
 
     switch (source) {
+      case 'direct':     var type = 'video/mp4';     break;
       case 'youtube':    var type = 'video/youtube'; break;
       case 'soundcloud': var type = 'audio/mp3';     break;
     }

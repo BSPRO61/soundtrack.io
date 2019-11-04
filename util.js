@@ -1,6 +1,5 @@
 var async = require('async')
   , rest = require('restler')
-  , slug = require('slug-component')
   , config = require('./config');
 
 var DEBUG = false;
@@ -17,11 +16,15 @@ function parseTitleString(string, partsCallback) {
   // TODO: load from datafile
   var baddies = ['[dubstep]', '[electro]', '[edm]', '[house music]',
     '[glitch hop]', '[video]', '[official video]', '(official video)',
+    '(official music video)', '(lyrics)',
     '[ official video ]', '[official music video]', '[free download]',
+    '[official]', '[electronica]', '[electronica | plasmapool]',
     '[free dl]', '( 1080p )', '(with lyrics)', '(high res / official video)',
     '(music video)', '[music video]', '[hd]', '(hd)', '[hq]', '(hq)',
-    '(original mix)', '[original mix]',
-    '[monstercat release]', '[monstercat freebie]'];
+    '(original mix)', '[original mix]', '[lyrics]', '[free]', '[trap]',
+    '[monstercat release]', '[monstercat freebie]', '[monstercat]',
+    '[edm.com premeire]', '[edm.com exclusive]', '[enm release]',
+    '[free download!]', '[monstercat free release]'];
   baddies.forEach(function(token) {
     string = string.replace(token + ' - ', '').trim();
     string = string.replace(token.toUpperCase() + ' - ', '').trim();
@@ -76,6 +79,7 @@ function parseTitleString(string, partsCallback) {
   credits.push(  title.replace(/(.*) \(ft (.*)\)/i,         '$2').trim() );
   credits.push(  title.replace(/(.*) \(feat\.? (.*)\)/i,    '$2').trim() );
   credits.push(  title.replace(/(.*) \(featuring (.*)\)/i,  '$2').trim() );
+  credits.push(  title.replace(/(.*) \(produced by (.*)\)/i,'$2').trim() );
   credits.push( artist.replace(/(.*) ft\.? (.*)/i,          '$1').trim() );
   credits.push( artist.replace(/(.*) ft\.? (.*)/i,          '$2').trim() );
   credits.push( artist.replace(/(.*) feat\.? (.*)/i,        '$1').trim() );
@@ -91,6 +95,7 @@ function parseTitleString(string, partsCallback) {
   credits.push( artist.replace(/(.*) vs\.? (.*)/i,          '$2').trim() );
   credits.push( artist.replace(/(.*) x (.*)/i,              '$1').trim() );
   credits.push( artist.replace(/(.*) x (.*)/i,              '$2').trim() );
+  
 
   var creditMap = {};
   credits.forEach(function(credit) {
@@ -122,7 +127,7 @@ module.exports = {
     var queries = [];
 
     if (!interval) { var interval = 24; }
-    if (!skip)     { var skip = 1; }
+    if (!skip)     { var skip = 1000 * 60 * 60 * 24; }
     if (!limit)    { var limit = 24; }
 
     var halfTime = interval / 2; // moving window
@@ -132,7 +137,7 @@ module.exports = {
       var start = new Date();
       var end = new Date( start.getTime() );
 
-      start = new Date( start           - ((i+1)  * 1000 * 60 * 60 * 24) );
+      start = new Date( start           - ((i+1)  * skip) );
       end   = new Date( start.getTime() + interval );
 
       var query = {};

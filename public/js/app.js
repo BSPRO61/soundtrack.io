@@ -6,9 +6,9 @@ var COOKIE_EXPIRES          = 604800;
 var Soundtrack = function() {
   this.settings = {
       notifications:        $.cookie('notificationsEnabled')
-    , streaming:           ($.cookie('streaming') !== 'false') ? true : false
-    , avoidVideo:          ($.cookie('avoidVideo') === 'true') ? true : false
-    , maxTimeToPlaySource: $.cookie('maxTimeToPlaySource', Number) || DEFAULT_MAX_SOURCE_TIME
+    , streaming:            $.cookie('streaming') !== 'false'
+    , avoidVideo:           $.cookie('avoidVideo') === 'true'
+    , maxTimeToPlaySource:  $.cookie('maxTimeToPlaySource', Number) || DEFAULT_MAX_SOURCE_TIME
   };
   this.user = {
     username: $('a[data-for=user-model]').data('username')
@@ -22,7 +22,7 @@ var Soundtrack = function() {
   };
   this.controls = {
     volume: {}
-  }
+  };
   // stub out the player, since sometimes we don't load it.
   this.player = {
     ready:       function( callback )     { return callback(); },
@@ -35,7 +35,7 @@ var Soundtrack = function() {
     currentTime: function( t )            { return 0; },
     duration:    function( t )            { return 0; },
     error:       function( e )            { return this; },
-  }
+  };
 };
 Soundtrack.prototype.checkNotificationPermissions = function(callback) {
   if (window.webkitNotifications.checkPermission() != 0) {
@@ -43,7 +43,7 @@ Soundtrack.prototype.checkNotificationPermissions = function(callback) {
       console.log(e);
     });
   }
-}
+};
 Soundtrack.prototype.notify = function(img, title, content, callback) {
 
   if (!this.settings.notifications) { return false; }
@@ -53,11 +53,11 @@ Soundtrack.prototype.notify = function(img, title, content, callback) {
     setTimeout(function() {
       e.currentTarget.cancel();
     }, 15000);
-  }
+  };
   notification.onclick = function() {
     window.focus();
     this.cancel();
-  }
+  };
   notification.show();
 };
 Soundtrack.prototype.editTrackID = function( trackID ) {
@@ -68,7 +68,7 @@ Soundtrack.prototype.editTrackID = function( trackID ) {
 
     $editor.data('track-id',    track._id );
     $editor.data('artist-slug', track._artist.slug );
-    $editor.data('artist-id',   track._artist._d );
+    $editor.data('artist-id',   track._artist._id );
     $editor.data('track-slug',  track.slug );
 
     $editor.find('input[name=trackArtistID]').val( track._artist._id );
@@ -106,7 +106,30 @@ Soundtrack.prototype.editTrackID = function( trackID ) {
 
     $editor.modal();
   });
+};
+
+var YouTube = function(key) {
+  this.key = key;
+  this.base = 'https://www.googleapis.com/youtube/v3/';
 }
+YouTube.prototype.get = function(url, params, cb) {
+  var self = this;
+
+  params.key = self.key;
+
+  var qs = Object.keys( params ).map(function(k) {
+    return k + '=' + params[k];
+  });
+
+  $.getJSON( self.base + url + '?' + qs.join('&') , cb );
+};
+
+function HTMLescape(html) {
+  return document.createElement('div')
+    .appendChild(document.createTextNode(html))
+    .parentNode
+    .innerHTML;
+};
 
 function volumeChangeHandler(e) {
   var vol = Number( e.value );
@@ -120,7 +143,7 @@ function mutePlayer(saveState) {
   soundtrack.player.volume( 0.00001 );
   $.cookie('lastVolume', 0);
   $('.slider[data-for=volume]').slider('setValue', 0).val(0);
-}
+};
 
 function unmutePlayer() {
   var lastVol = $.cookie('lastVolume', Number);
@@ -133,24 +156,26 @@ function unmutePlayer() {
     $('.slider[data-for=volume]').slider('setValue', DEFAULT_VOLUME).val( DEFAULT_VOLUME );
     $.cookie('lastVolume', DEFAULT_VOLUME, { expires: COOKIE_EXPIRES });
   }
-}
+};
 
 function ensureVolumeCorrect() {
   var lastVol = $.cookie('lastVolume', Number);
-  console.log('setting volume to ', lastVol / 100);
+  if (soundtrack.debug) console.log('setting volume to ', lastVol / 100);
 
   soundtrack.player.volume( lastVol / 100 );
 
   if ($('.slider[data-for=volume]')[0]) {
     $('.slider[data-for=volume]').slider('setValue', lastVol ).val( lastVol );
   }
-}
+};
 
 function updateUserlist() {
   $.get('/listeners.json', function(data) {
     $('#userlist').html('');
     $('.user-count').html('<strong>' + data.length + '</strong> online');
     data.forEach(function(user) {
+      user.username = HTMLescape(user.username);
+
       // TODO: use template (Blade?)
       if (user.role != 'listener') {
         $('<li data-user-id="' + user._id + '"><a href="/' + user.slug + '"><img src="' + user.avatar.url + '" class="user-avatar-small pull-left" />' + user.username + ' <span class="badge pull-right" title="editors can fix track titles and artist names.  ping @martindale if you want to help.">' + user.role + '</span></a></li>').appendTo('#userlist');
@@ -160,7 +185,8 @@ function updateUserlist() {
 
     });
   });
-}
+};
+
 var videoToggled = false; //TODO: Should this use Cookie?
 
 function toggleVideo() {
@@ -218,8 +244,9 @@ angular.module('soundtrack-io', ['timeFilters']);
 
 function AppController($scope, $http) {
   window.updatePlaylist = function() {
-    console.log('angular updatePlaylist()')
     $http.get('/playlist.json').success(function(data) {
+      if (!data) var data = [];
+
       $scope.tracks = data.map(function(t) {
         if (t.images && t.images.thumbnail && t.images.thumbnail.url) {
           // strip hardcoded http urls
@@ -228,11 +255,13 @@ function AppController($scope, $http) {
         return t;
       });
 
-      $scope.playlistLength = data.map(function(x) {
-        return x.duration;
-      }).reduce(function(prev, now) {
-        return prev + now;
-      });
+      if (data.length) {
+        $scope.playlistLength = data.map(function(x) {
+          return x.duration;
+        }).reduce(function(prev, now) {
+          return prev + now;
+        });
+      }
 
       if (typeof(soundtrack) != 'undefined') {
         soundtrack.room.track = data[0];
@@ -297,9 +326,8 @@ promise.done(function() {
 
     $('.timestamp').each(function(i , el) {
       var $el = $(el);
-      $el.html( moment( $el.attr('title') ).fromNow() );
+      $el.html( moment( $el.attr('datetime') ).fromNow() );
     });
-
 
   }, 1000);
 });
@@ -307,20 +335,17 @@ promise.done(function() {
 $(window).load(function() {
 
   var sockjs = null;
-  var retryTimes = [1000, 5000, 10000, 30000, 60000, 120000, 300000, 600000, 86400000]; //in ms
+  var retryTimes = [100, 1000, 2500, 5000, 10000, 30000, 60000, 120000, 300000, 600000, 86400000]; //in ms
   var retryIdx = 0;
 
   // must be after DOM loads so we have access to the user-model
   soundtrack = new Soundtrack();
+  youtube = new YouTube('AIzaSyBnCN68b8W5oGgBKKkM2cSQhSygnLPApEs');
   if ($('#main-player').length) {
     soundtrack.player = videojs('#main-player', {
-      techOrder: ['html5', 'youtube', 'flash'],
-      forceHTML5: true,
-      forceSSL: true,
-      controls: true,
-      autoload: true
+      techOrder: ['html5', 'youtube', 'flash']
     });
-    soundtrack.player.controls(true);
+    soundtrack.player.controls( true );
   } //else {
   //  soundtrack.player = videojs('#secondary-player', {
   //  techOrder: ['html5', 'youtube']
@@ -334,7 +359,7 @@ $(window).load(function() {
   $('*[data-for=max-source-load-time]').val( $.cookie('maxTimeToPlaySource', Number) );
 
   soundtrack.player.ready(function() {
-    console.log('player loaded. :)');
+    if (soundtrack.debug) console.log('player loaded. :)');
 
     soundtrack.startSockJs = function() {
       soundtrack.sockjs = new SockJS('/stream');
@@ -354,10 +379,10 @@ $(window).load(function() {
         var received = new Date();
 
         var msg = JSON.parse(e.data);
-        console.log(msg);
+        if (soundtrack.debug) console.log(msg);
 
         switch (msg.type) {
-          default: console.log('unhandled message: ' + msg);
+          default: console.warn('unhandled message: ' + msg);
           break;
           case 'edit':
             updatePlaylist();
@@ -365,6 +390,7 @@ $(window).load(function() {
           case 'track':
             updatePlaylist();
 
+            // TODO: replace with proper 2-way databinding
             if (msg.data._artist) {
               $('#track-title').attr('href', '/' + msg.data._artist.slug + '/' + msg.data.slug + '/' + msg.data._id);
 
@@ -376,9 +402,9 @@ $(window).load(function() {
 
             $('#track-title').html( msg.data.title );
 
-
             $('input[name=current-track-id]').val(msg.data._id);
             $('*[data-for=current-track-id]').data('track-id', msg.data._id);
+            $('*[data-for=current-track-id]').data('_id', msg.data._id);
 
             if (msg.data.curator) {
               $('#track-curator').html('<a title="added by" href="/' + msg.data.curator.slug + '">' + msg.data.curator.username + '</a>');
@@ -388,8 +414,6 @@ $(window).load(function() {
             } else {
               $('#track-curator').html('the machine');
             }
-
-            console.log('STREAMING : ' + soundtrack.settings.streaming);
 
             if (soundtrack.settings.streaming) {
               var sources = [];
@@ -429,19 +453,29 @@ $(window).load(function() {
                 });
               }
 
-              var rollIt = function() {
-                console.log('rollIt()', sources[0]);
-                if (!sources[0]) return;
-                soundtrack.player.poster( sources[0].poster );
-
-                soundtrack.player.pause();
-                soundtrack.player.src( [ sources[0] ] );
-                soundtrack.player.play();
+              if (msg.data.sources.bandcamp) {
+                msg.data.sources.bandcamp.forEach(function(item) {
+                  if (!item || !item.data) return console.log('bandcamp shit breaking.  totally chrisinajar\'s fault.  deets: ' , item );
+                  sources.push({
+                    type: 'audio/mp3',
+                    src: item.data.url,
+                    poster: (item.data) ? item.data.artwork_url : undefined
+                  });
+                });
               }
 
-              console.log('sources: ', sources);
+              if (msg.data.sources.direct) {
+                msg.data.sources.direct.forEach(function(item) {
+                  if (!item || !item.uri) return console.log('direct url breaking. @martindale\'s fault.  details:' , item );
+                  sources.push({
+                    type: 'video/mp4',
+                    src: item.uri
+                  });
+                });
+              }
+
               if (!sources.length) {
-                $.ajax({
+                return $.ajax({
                   url: '/tracks/' + msg.data._id,
                   method: 'PUT',
                   data: {
@@ -450,45 +484,82 @@ $(window).load(function() {
                     }
                   }
                 }, function(data) {
-                  console.log('submitted the track as needing more sources: ', data);
+                  if (soundtrack.debug) console.log('submitted the track as needing more sources: ', data);
                 });
-              } else {
-                rollIt();
-                // track should now be playing.
-
-                var maxTimeToPlayTrack = soundtrack.settings.maxTimeToPlaySource;
-                var ensureTrackPlaying = setInterval(function() {
-                  if (soundtrack.player.currentTime() > 0 || !sources.length) {
-                    console.log('track is playing (yay!), or there are no remaining sources (boo). clearing interval.');
-                    clearInterval( ensureTrackPlaying )
-                  } else {
-                    console.log('track is NOT playing after %dms... advancing to next source', maxTimeToPlayTrack);
-                    console.log('failed to load: ', sources[0] );
-
-                    sources.shift();
-                    console.log('shifted sources: ', sources );
-                    rollIt();
-                  }
-                }, maxTimeToPlayTrack );
               }
 
-              var bufferEvaluator = function() {
+              function rollTrack() {
+                if (soundtrack.debug) console.log('rollTrack()', sources );
+                if (soundtrack.debug) console.log('current source:', soundtrack.player.src() );
+                if (!sources[0]) return;
+
+                // this is an egregious and terrifying hack
+                // TODO: not use this hack
+                soundtrack.player.dispose();
+                $('<video id="main-player" class="video-js vjs-default-skin" width="100%" height="295"></video>').appendTo('#screen-one');
+                soundtrack.player = videojs('#main-player', {
+                  techOrder: ['html5', 'youtube', 'flash']
+                });
+                soundtrack.player.controls( true );
+
+                soundtrack.player.error( null );
+                soundtrack.player.poster( sources[0].poster );
+
+                soundtrack.player.pause();
+                soundtrack.player.src( sources[0] );
+                soundtrack.player.load();
+
+                soundtrack.player.one('playing', function() {
+                  if (soundtrack.debug) console.log('playing event');
+                  clearInterval( ensureTrackPlaying );
+                  jumpIfNecessary();
+                });
+
+                // TODO: find a better event to listen for!  this is terrible.
+                soundtrack.player.one('durationchange', function() {
+                  if (soundtrack.debug) console.log('durationchange event');
+                  if (soundtrack.debug) console.log('setting current time 0 and src...');
+                  if (soundtrack.debug) console.log('source is now', soundtrack.player.src() );
+                  soundtrack.player.currentTime( 0 );
+                  soundtrack.player.play();
+                });
+              }
+
+              function verifyTrackPlaying() {
+                if (!sources.length) {
+                  if (soundtrack.debug) console.log('sources length is zero.  sad day.  failing out.');
+                  clearInterval( ensureTrackPlaying );
+                } else if (soundtrack.player.currentTime() > 0) {
+                  if (soundtrack.debug) console.log('track is playing (yay!).  clearing interval.');
+                  clearInterval( ensureTrackPlaying )
+                } else {
+                  if (soundtrack.debug) console.log('track is NOT playing after %dms... advancing to next source', maxTimeToPlayTrack);
+                  if (soundtrack.debug) console.log('failed to load: ', sources[0] );
+
+                  sources.shift();
+                  rollTrack();
+                }
+              }
+
+              function jumpIfNecessary() {
+                if (soundtrack.debug) console.log( 'now calling jumpIfNecessary()' );
+
                 var now = new Date();
                 var estimatedSeekTo = (msg.seekTo * 1000) + (now - received);
                 var estimatedProgress = estimatedSeekTo / (msg.data.duration * 1000);
 
-                soundtrack.player.currentTime( estimatedSeekTo / 1000 );
+                if (estimatedSeekTo / 1000 > 5) {
+                  soundtrack.player.currentTime( estimatedSeekTo / 1000 );
+                }
 
                 ensureVolumeCorrect();
-              };
+              }
 
-              soundtrack.player.one('playing', bufferEvaluator );
+              rollTrack();
 
-              var track = msg.data;
+              var maxTimeToPlayTrack = soundtrack.settings.maxTimeToPlaySource;
+              var ensureTrackPlaying = setInterval( verifyTrackPlaying , maxTimeToPlayTrack );
 
-              $.getJSON('http://ws.audioscrobbler.com/2.0/?method=track.getsimilar&artist=' + encodeURIComponent(track._artist.name) + '&track=' + encodeURIComponent(track.title) + '&api_key=1a024cc184674f566ac53abf8cc6f137&format=json', function(data) {
-                console.log('similar tracks (e.g., potential follows: ', data);
-              });
 
             }
 
@@ -532,7 +603,7 @@ $(window).load(function() {
             soundtrack.sockjs.send(JSON.stringify({
               type: 'pong'
             }));
-            console.log("Ping Pong\'d");
+            if (soundtrack.debug) console.log("Ping Pong\'d");
           break;
           case 'announcement':
             $( unescape( msg.data.formatted ) ).appendTo('#messages');
@@ -542,9 +613,9 @@ $(window).load(function() {
       };
 
       soundtrack.sockjs.onclose = function() {
-        console.log('Lost our connection, lets retry!');
+        if (soundtrack.debug) console.log('Lost our connection, lets retry!');
         if (retryIdx < retryTimes.length) {
-          console.log("Retrying connection in " + retryTimes[retryIdx] + 'ms');
+          if (soundtrack.debug) console.log("Retrying connection in " + retryTimes[retryIdx] + 'ms');
           setTimeout(restartSockJs, retryTimes[retryIdx++]);
         } else {
           alert('Bummer. We lost connection.');
@@ -578,10 +649,10 @@ $(window).load(function() {
 
     if (currentVolume) {
       mutePlayer();
-      $(self).children('i').replaceWith('<i class="icon-volume-off" />');
+      $(self).children('i').replaceWith('<i class="icon-white icon-volume-off" />');
     } else {
       unmutePlayer();
-      $(self).children('i').replaceWith('<i class="icon-volume-up" />');
+      $(self).children('i').replaceWith('<i class="icon-white icon-volume-up" />');
     }
 
     return false;
@@ -724,7 +795,7 @@ $(window).load(function() {
   });
 
   OutgoingChatHandler.addListener('katamari', function(msg) {
-    var i, s, ss = ['http://kathack.com/js/kh.js', 'http://ajax.googleapis.com/ajax/libs/jquery/1.5.1/jquery.min.js'];
+    var i, s, ss = ['/js/kh.js'];
     for (i = 0; i != ss.length; i++) {
       s = document.createElement('script');
       s.src = ss[i];
@@ -735,7 +806,7 @@ $(window).load(function() {
 
   OutgoingChatHandler.addListener('doge', function(msg) {
     var e = document.createElement('script');
-    e.src = 'https://raw.github.com/martindale/libdoge/master/libdoge/libdoge.min.js';
+    e.src = '/js/libdoge.min.js';
     document.body.appendChild(e);
   });
 
@@ -874,7 +945,7 @@ $(window).load(function() {
         }
       }
       if (A === null) {
-        console.warn("Could not find a node of the right size. Please try a different page.");
+        if (soundtrack.debug) console.warn("Could not find a node of the right size. Please try a different page.");
         return
       }
       c();
@@ -910,6 +981,42 @@ $(window).load(function() {
     return false;
   });
 
+  $(document).on('click', '*[data-action=toggle-track-controls]', function(e) {
+    e.preventDefault();
+    $('.track-controls').slideToggle();
+    return false;
+  });
+
+  $(document).on('click', '*[data-action=ban-track]', function(e) {
+    e.preventDefault();
+    var $track = $(this);
+    console.log('banning track ID:', $track.data('_id'));
+    
+    if (confirm("Are you sure you want to ban \""+ 'foo' +"\"?")) {
+      $.ajax({
+        type: 'PATCH',
+        url: '/tracks/' + $track.data('_id'),
+        data: {
+          state: 'banned'
+        },
+        success: function(data) {
+          console.log('banned:', data);
+        }
+      });
+    }
+    return false;
+  });
+
+  $(document).on('click', '*[data-action=tip-current-curator]', function(e) {
+    e.preventDefault();
+
+    $.post('/tips', function(data) {
+      if (data.errors) alert( data.errors );
+    });
+
+    return false;
+  });
+
   $(document).on('click', '*[data-action=remove-queued-track]', function(e) {
     e.preventDefault();
     var self = this;
@@ -923,7 +1030,7 @@ $(window).load(function() {
         index: $(self).data('track-index')
       }
     }, function(data) {
-      console.log(data);
+      if (soundtrack.debug) console.log(data);
     });
 
     return false;
@@ -933,7 +1040,7 @@ $(window).load(function() {
     e.preventDefault();
     $('*[data-for=track-search-results]').html('');
     $('*[data-for=track-search-query]').val('');
-    $('#search-modal *[data-for=track-search-query]').focus();
+    $('#search-modal').find('*[data-for=track-search-query]').focus();
     $('*[data-for=track-search-select-source]').removeClass('btn-primary');
     return false;
   });
@@ -945,12 +1052,11 @@ $(window).load(function() {
     $('*[data-for=track-search-select-source]').removeClass('btn-primary');
     $(self).addClass('btn-primary');
 
-    if ($(self).data('data') == 'all') {
-      $('*[data-for=track-search-results] li').slideDown();
+    if ($(self).data('data') === 'all') {
+      $('*[data-for=track-search-results] tr').slideDown();
     } else {
-
-      $('*[data-for=track-search-results] li:not(*[data-source=' + $(self).data('data') + '])').slideUp();
-      $('*[data-for=track-search-results] li[data-source=' + $(self).data('data') + ']').slideDown();
+      $('*[data-for=track-search-results] tr:not(*[data-source=' + $(self).data('data') + '])').slideUp();
+      $('*[data-for=track-search-results] tr[data-source=' + $(self).data('data') + ']').slideDown();
     }
 
     return false;
@@ -968,13 +1074,75 @@ $(window).load(function() {
       source: $(self).data('source'),
       id: $(self).data('id')
     }, function(response) {
-      console.log(response);
+      if (soundtrack.debug) console.log(response);
+    });
+
+    return false;
+  }, 200, true);
+
+  var selectSet = _.debounce(function(e) {
+    e.preventDefault();
+    var $self = $(this);
+
+    $self.slideUp(function() {
+      $(this).remove();
+    });
+
+    $.getJSON('/' + $self.data('set-slug') , function(set) {
+      set._tracks.forEach(function(track) {
+        $.post('/playlist', {
+          source: 'soundtrack',
+          id: track._id
+        }, function(response) {
+          if (soundtrack.debug) console.log(response);
+        });
+      });
     });
 
     return false;
   }, 200, true);
 
   $(document).on('click', '*[data-action=queue-track]', selectTrack);
+
+  $(document).on('click', '*[data-action=queue-set]', selectSet );
+
+  $(document).on('click', '*[data-action=launch-playlist-editor]', function(e) {
+    e.preventDefault();
+    $('#playlist-modal').modal('show');
+    return false;
+  });
+
+  $(document).on('click', '*[data-action=launch-playlist-creator]', function(e) {
+    e.preventDefault();
+    var $self = $(this);
+
+    $('#create-playlist-modal').modal('show');
+    $('#create-playlist-form').children('input[name=trackID]').val( $self.data('track') );
+    $('#create-playlist-form').children('input[name=current-track-id]').val( $self.data('track') );
+
+    // TODO: replace with local data cache / Maki datastore
+    $.getJSON('/tracks/'+$self.data('track'), function(track) {
+      var $track = $('*[data-for=track-name]');
+      $track.children('.track-artist').html( track._artist.name );
+      $track.children('.track-title').html( track.title );
+
+      $track.children('*[data-for=track-preview]').html( soundtrack._templates.preview( track ) );
+
+    });
+
+    return false;
+  });
+
+  soundtrack._templates = {
+    preview: function( track ) {
+      if (track.sources && track.sources.youtube && track.sources.youtube.length) {
+        var video = track.sources.youtube[0];
+        return '<iframe id="ytplayer" type="text/html" width="300" height="170" src="//www.youtube.com/embed/'+ video.id +'" frameborder="0"/>';
+      }
+
+      return 'no preview available :(';
+    }
+  };
 
   $(document).on('click', '*[data-action=add-track-to-playlist]', function(e) {
     e.preventDefault();
@@ -988,7 +1156,7 @@ $(window).load(function() {
       trackID: $(self).data('track-id')
     }, function(data) {
       // TODO: update UI with correct count
-      console.log(data);
+      if (soundtrack.debug) console.log(data);
     });
 
     return false;
@@ -1014,11 +1182,41 @@ $(window).load(function() {
     $input[0].selectionStart = $input[0].selectionEnd = $input.val().length;
 
     // TODO: execute search queries in parallel
-    $.getJSON('https://gdata.youtube.com/feeds/api/videos?max-results=50&v=2&alt=jsonc&q=' + query, function(data) {
-      data.data.items.forEach(function(item) {
-        if (item.duration <= maxLength) {
-          $('<li data-source="youtube" data-title="' + item.title + '" data-id="' + item.id + '"><span class="pull-right badge">youtube</span><span class="pull-right badge">' + item.duration.toHHMMSS() + '</span><img src="' + item.thumbnail.sqDefault + '" class="thumbnail-medium" />' + item.title + '<div class="pull-right clearfix"><button class="btn btn-mini pull-right">queue this! &raquo;</button></div></li><div class="clearfix" />').on('click', selectTrack).appendTo('*[data-for=track-search-results]');
-        }
+    youtube.get('search', {
+      q: query,
+      part: 'snippet',
+      maxResults: 50
+    }, function(data) {
+
+      var videoMap = {}
+      data.items.forEach(function(v) {
+        if (!v.id || !v.id.videoId) return;
+        videoMap[ v.id.videoId ] = v;
+      });
+
+      youtube.get('videos', {
+        id: Object.keys( videoMap ).join(),
+        part: 'contentDetails'
+      }, function(result) {
+
+        result.items.forEach(function(v) {
+          var video = videoMap[ v.id ];
+
+          video.id = v.id;
+          video.title = video.snippet.title;
+          video.duration = moment.duration(v.contentDetails.duration).as('seconds');
+          video.images = video.snippet.thumbnails;
+
+          if (video.duration <= maxLength) {
+            var button = '<button class="btn btn-mini" data-source="youtube" data-title="'+HTMLescape(video.title)+'" data-id="'+video.id+'">queue &raquo;</button>';
+            var string = '<tr data-source="youtube"><td><img src="'+video.images.default.url+'" class="thumbnail-medium" /></td><td>'+HTMLescape(video.title)+'</td><td><span class="badge">youtube</span></td><td><span class="badge">'+video.duration.toHHMMSS()+'</span></td><td data-for="actions"></td></tr>';
+            
+            var $row = $(string).appendTo('*[data-for=track-search-results]');
+            $(button).on('click', selectTrack).appendTo($row.find('*[data-for=actions]'));
+          }
+
+        });
+
       });
     });
 
@@ -1030,7 +1228,11 @@ $(window).load(function() {
       }
       tracks.forEach(function(track) {
         if (track.duration / 1000 <= maxLength) {
-          $('<li data-source="soundcloud" data-title="' + track.title + '" data-id="' + track.id + '"><span class="pull-right badge">soundcloud</span><span class="pull-right badge">' + (track.duration / 1000).toHHMMSS() + '</span><img src="' + track.artwork_url + '" class="thumbnail-medium" />' + track.title + '<div class="pull-right clearfix"><button class="btn btn-mini pull-right">queue this! &raquo;</button></div></li><div class="clearfix" />').on('click', selectTrack).appendTo('*[data-for=track-search-results]');
+          var button = '<button class="btn btn-mini" data-source="soundcloud" data-title="'+HTMLescape(track.title)+'" data-id="'+track.id+'">queue &raquo;</button>';
+          var string = '<tr data-source="soundcloud"><td><img src="'+track.artwork_url+'" class="thumbnail-medium" /></td><td>'+HTMLescape(track.title)+'</td><td><span class="badge">soundcloud</span></td><td><span class="badge">'+(track.duration / 1000).toHHMMSS()+'</span></td><td data-for="actions"></td></tr>';
+          
+          var $row = $(string).appendTo('*[data-for=track-search-results]');
+          $(button).on('click', selectTrack).appendTo($row.find('*[data-for=actions]'));
         }
       });
     });
@@ -1055,16 +1257,50 @@ $(window).load(function() {
 
     $('#create-playlist-modal').modal('hide');
     // TODO: use real username, if only for rest purposes.
+    var form = $('#create-playlist-form');
     $.post('/username/playlists', {
-      name: $('#create-playlist-form input[name=name]').val(),
-      description: $('#create-playlist-form textarea[name=description]').val(),
-      trackID: $('input[name=current-track-id]').val()
+      name: form.find('input[name=name]').val(),
+      description: form.find('textarea[name=description]').val(),
+      trackID: $('input[name=current-track-id]').val(),
+      status: (form.find('input[name=status]').prop('checked')) ? 'public' : 'private'
     }, function(data) {
-      console.log('playlist created!');
+      if (soundtrack.debug) console.log('playlist created!');
 
       $('<li data-playlist-id="' + data.results._id + '" data-action="save-track"><a data-playlist-id="' + data.results._id + '" data-action="save-track">' + data.results.name + '</a></li>').insertBefore('ul[data-for=user-playlists] li:last-child');
 
     });
+    return false;
+  });
+
+  $(document).on('click', '*[data-action=launch-room-editor]', function(e) {
+    e.preventDefault();
+    var self = this;
+    var $self = $(this);
+    var slug = $self.data('room-slug');
+    $.getJSON('/rooms/'+slug, function(room) {
+      $('#edit-room-modal').find('textarea[name=description]').val( room.description );
+      $('#edit-room-modal').find('input[name=roomSlug]').val( room.slug );
+      $('#edit-room-modal').modal();
+    });
+    return false;
+  });
+  
+  $(document).on('submit', 'form[data-for=edit-room]', function(e) {
+    e.preventDefault();
+    var $self = $(this);
+    var slug = $self.find('input[name=roomSlug]').val();
+    $.ajax({
+      type: 'PATCH',
+      url: '/rooms/' + slug,
+      dataType: 'json',
+      data: {
+        description: $self.find('textarea[name=description]').val()
+      },
+      success: function() {
+        $self.modal('hide');
+      }
+    });
+
     return false;
   });
 
@@ -1083,20 +1319,19 @@ $(window).load(function() {
     $.post('/tracks/' + trackID, {
       nsfw: true
     }, function(data) {
-      console.log(data);
+      if (soundtrack.debug) console.log(data);
     });
 
   });
 
   $(document).on('click', '*[data-action=track-flag-live]', function(e) {
-
     var self = this;
     var trackID = $(self).data('track-id');
 
     $.post('/tracks/' + trackID, {
       live: true
     }, function(data) {
-      console.log(data);
+      if (soundtrack.debug) console.log(data);
     });
 
   });
@@ -1105,7 +1340,7 @@ $(window).load(function() {
     e.preventDefault();
     var self = this;
 
-    console.log('track edit submission...');
+    if (soundtrack.debug) console.log('track edit submission...');
 
     var trackID    = $(self).data('track-id')
       , artistSlug = $(self).data('artist-slug')
@@ -1117,7 +1352,7 @@ $(window).load(function() {
       artistName: $(self).find('input[name=artist]').val(),
       artistID: $(self).find('input[name=trackArtistID]').val()
     }, function(data) {
-      console.log(data);
+      if (soundtrack.debug) console.log(data);
       $(self).modal('hide');
     });
 
@@ -1128,11 +1363,12 @@ $(window).load(function() {
     e.preventDefault();
     var self = this;
 
-    var currentArtist = $('form[data-for=edit-track]').find('input[name=artist]').val();
-    var currentTitle = $('form[data-for=edit-track]').find('input[name=title]').val();
+    var form = $('form[data-for=edit-track]');
+    var currentArtist = form.find('input[name=artist]').val();
+    var currentTitle = form.find('input[name=title]').val();
 
-    $('form[data-for=edit-track]').find('input[name=artist]').val( currentTitle );
-    $('form[data-for=edit-track]').find('input[name=title]').val( currentArtist );
+    form.find('input[name=artist]').val( currentTitle );
+    form.find('input[name=title]').val( currentArtist );
 
     return false;
   });
@@ -1144,7 +1380,7 @@ $(window).load(function() {
       trackID: $('input[name=current-track-id]').val()
     }, function(data) {
       // TODO: update UI with correct count
-      console.log(data);
+      if (soundtrack.debug) console.log(data);
     });
   });
 
@@ -1155,7 +1391,7 @@ $(window).load(function() {
     $.post('/playlist/' + $(self).data('track-id'), {
       v: 'up'
     }, function(data) {
-      console.log(data);
+      if (soundtrack.debug) console.log(data);
     });
 
     return false;
@@ -1168,7 +1404,7 @@ $(window).load(function() {
     $.post('/playlist/' + $(self).data('track-id'), {
       v: 'down'
     }, function(data) {
-      console.log(data);
+      if (soundtrack.debug) console.log(data);
     });
 
     return false;
@@ -1177,8 +1413,9 @@ $(window).load(function() {
   $(document).on('click', '.message *[data-role=author]', function(e) {
     e.preventDefault();
     var self = this;
-    $('#chat-input').val( $('#chat-input').val() + ' @' + $(self).data('user-username') + ' ');
-    $('#chat-input').focus();
+    var input = $('#chat-input');
+    input.val( input.val() + ' @' + $(self).data('user-username') + ' ');
+    input.focus();
     return false;
   });
 
@@ -1188,7 +1425,7 @@ $(window).load(function() {
 
   $(document).on('keyup mouseup', '*[data-for=max-source-load-time]', function(e) {
     var self = this;
-    console.log('max wait time: ', $(self).val());
+    if (soundtrack.debug) console.log('max wait time: ', $(self).val());
     $.cookie('maxTimeToPlaySource', $(self).val());
     soundtrack.settings.maxTimeToPlaySource = Number($(self).val());
   });
@@ -1199,16 +1436,44 @@ $(window).load(function() {
     return false;
   });
 
-  $('*[data-action=toggle-playlist-visibility]').on('click', function(e) {
+  $(document).on('click', '*[data-action=toggle-playlist-visibility]', function(e) {
     var self = this;
     $.post('/fakeuser/playlists/' + $(self).data('playlist-id') + '/edit', {
-      public: $(self).prop('checked')
+      status: ($(self).prop('checked')) ? 'public' : 'private'
     }, function(data) {
-      console.log(data);
+      if (soundtrack.debug) console.log(data);
     });
   });
 
-  $('*[data-action=enable-profile-editor]').on('click', function(e) {
+  $(document).on('click', '*[data-action=delete-playlist]', function(e) {
+    var self = this;
+
+    if (confirm('Are you sure you would like to delete this playlist?')) {
+      $.ajax({
+        url: '/playlists/' + $(self).data('playlist-id'),
+        type: 'DELETE',
+        complete: function() {
+          $(self).parent().parent().slideUp().remove();
+        }
+      });
+    }
+  });
+
+  $(document).on('click', '*[data-action=remove-track-from-playlist]', function(e) {
+    var self = this;
+
+    if (confirm('Are you sure you would like to remove this track?')) {
+      $.ajax({
+        url: '/playlists/' + $(self).data('playlist-id') + '/' + $(self).data('index'),
+        type: 'DELETE',
+        complete: function() {
+          $(self).parent().parent().parent().slideUp().remove();
+        }
+      });
+    }
+  });
+
+  $(document).on('click', '*[data-action=enable-profile-editor]', function(e) {
     var self = this;
     $('.bio').replaceWith($('#profile-editor').show());
   });
@@ -1220,14 +1485,14 @@ $(window).load(function() {
       $.post('/settings', {
         scrobble: true
       }, function(data) {
-        console.log(data);
+        if (soundtrack.debug) console.log(data);
       });
     } else {
       $.cookie('scrobblingEnabled', false, { expires: COOKIE_EXPIRES });
       $.post('/settings', {
         scrobble: false
       }, function(data) {
-        console.log(data);
+        if (soundtrack.debug) console.log(data);
       });
     }
   });
@@ -1239,14 +1504,14 @@ $(window).load(function() {
       $.post('/settings', {
         avoidVideo: true
       }, function(data) {
-        console.log(data);
+        if (soundtrack.debug) console.log(data);
       });
     } else {
       $.cookie('avoidVideo', false, { expires: COOKIE_EXPIRES });
       $.post('/settings', {
         avoidVideo: false
       }, function(data) {
-        console.log(data);
+        if (soundtrack.debug) console.log(data);
       });
     }
   });
@@ -1288,11 +1553,11 @@ $(window).load(function() {
   $('*[data-action=toggle-link-warning]').on('click', function(e) {
     var self = this;
     if ($(self).prop('checked')) {
-      console.log('enabling link warning...');
+      if (soundtrack.debug) console.log('enabling link warning...');
       $(document).on('click', '.message-content a', warnBeforeInterrupting);
       $.cookie('warnBeforeInterrupting', true, { expires: COOKIE_EXPIRES });
     } else {
-      console.log('disabling link warning...');
+      if (soundtrack.debug) console.log('disabling link warning...');
       $(document).off('click', '.message-content a', warnBeforeInterrupting);
       $.cookie('warnBeforeInterrupting', false, { expires: COOKIE_EXPIRES });
     }
